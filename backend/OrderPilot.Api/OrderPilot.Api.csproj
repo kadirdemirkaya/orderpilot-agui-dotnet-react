@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>b3dd83c3-9a5d-4f64-8c5f-040249dbde48</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AGUI.Server" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.23.0" />
+    <PackageReference Include="Microsoft.Agents.AI.Hosting.AGUI.AspNetCore" Version="1.23.0-preview.260928.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.10.1" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+@host = http://localhost:5000
+
+### AG-UI çalıştırması: cevap text/event-stream olarak olay akışıdır
+POST {{host}}/agent
+Content-Type: application/json
+Accept: text/event-stream
+
+{
+  "threadId": "demo-thread",
+  "runId": "demo-run-1",
+  "messages": [
+    { "id": "m1", "role": "user", "content": "Gecikmiş siparişleri listele" }
+  ],
+  "tools": [],
+  "context": []
+}
+
+### Demo verisini ve senaryoyu sıfırla
+POST {{host}}/api/dev/reset

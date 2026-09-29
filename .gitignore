@@ -1,0 +1,25 @@
+# Build & Object Files
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.dotnet_home/
+
+# User Secrets
+secrets.json
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment & Logs
+*.log
+.env
+.env.*.local
+
+# OS Files
+.DS_Store
+Thumbs.db
