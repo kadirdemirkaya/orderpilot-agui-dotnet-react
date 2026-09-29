@@ -1,22 +1,24 @@
 # OrderPilot
 
-AG-UI protokolünü .NET backend ve React frontend ile uçtan uca gösteren küçük, öğretici bir örnek.
+A small, educational end-to-end sample of the AG-UI protocol with a .NET backend and a React frontend.
 
-## AG-UI nedir?
+> The app UI and the agent's prompts are in Turkish; the code and docs are in English.
 
-AG-UI, bir AI ajanı ile kullanıcı arayüzü arasındaki konuşmanın kurallarıdır.
-Frontend ajana bir istek gönderir (`RunAgentInput`: mesaj geçmişi). Backend cevabı standart olaylar halinde akıtır:
-metin parçaları, tool çağrıları, tool sonuçları, çalıştırmanın başı ve sonu.
-Arayüz bu olayları dinleyerek sohbeti, tool kartlarını ve onay ekranlarını çizer.
-Hangi LLM veya ajan çerçevesi kullanılırsa kullanılsın, olay sözleşmesi aynıdır.
+## What is AG-UI?
 
-## Mimari
+AG-UI is a protocol for the conversation between an AI agent and a user interface.
+The frontend sends the agent a request (`RunAgentInput`: the message history). The backend streams the answer
+back as standard events: text chunks, tool calls, tool results, and the start and end of the run.
+The UI listens to these events to render the chat, tool cards and approval prompts.
+The event contract is the same no matter which LLM or agent framework sits behind it.
+
+## Architecture
 
 ```
-┌──────────── Tarayıcı (React, :5173) ────────────┐
+┌──────────── Browser (React, :5173) ─────────────┐
 │  useAgUiChat          useNotificationHub        │
-│  (sohbet, kartlar,    (bildirim bandı,          │
-│   onay, olay günlüğü)  geri sayım, auto-run)    │
+│  (chat, tool cards,   (notification banner,     │
+│   approval, event log) countdown, auto-run)     │
 └──────┬─────────────────────────┬────────────────┘
        │ AG-UI                   │ SignalR
        │ POST /agent + SSE       │ WebSocket /hub/notifications
@@ -28,27 +30,27 @@ Hangi LLM veya ajan çerçevesi kullanılırsa kullanılsın, olay sözleşmesi 
 │  AIAgent (Agent Framework)  DemoScenarioService │
 │   ├─ ListDelayedOrders       OrderDelayed       │
 │   ├─ GetOrderStatus          AutoRunRequested   │
-│   └─ StartRefund (onaylı)                       │
+│   └─ StartRefund (approval)                     │
 │        │            │                           │
 │        │            └──▶ OrderRepository ◀──────┤ POST /api/dev/reset
-│        ▼                 (bellek içi)           │
-│  IChatClient (OpenAI uyumlu)                    │
+│        ▼                 (in-memory)            │
+│  IChatClient (OpenAI-compatible)                │
 └────────┬────────────────────────────────────────┘
          │ HTTPS
          ▼
-   Gemini API (tool seçer, cevap yazar)
+   Gemini API (picks tools, writes answers)
 ```
 
-- **AG-UI kanalı (HTTP + SSE):** Her çalıştırmayı frontend başlatır. Backend Gemini'ye sorar, seçilen tool'u çalıştırır ve olayları geri akıtır.
-- **SignalR kanalı (WebSocket):** Backend kendiliğinden bildirim gönderir. Arka plan servisi Gemini'yi hiç çağırmaz.
+- **AG-UI channel (HTTP + SSE):** The frontend starts every run. The backend asks Gemini, runs the chosen tool and streams the events back.
+- **SignalR channel (WebSocket):** The backend pushes notifications on its own. The background service never calls Gemini.
 
-## Çalıştırma
+## Running
 
-Gereksinimler: .NET 10 SDK, Node 20+, bir Gemini API anahtarı.
+Requirements: .NET 10 SDK, Node 20+, a Gemini API key.
 
 ```bash
 # Backend: http://localhost:5000
-dotnet user-secrets set "Gemini:ApiKey" "<anahtar>" --project backend/OrderPilot.Api
+dotnet user-secrets set "Gemini:ApiKey" "<your-key>" --project backend/OrderPilot.Api
 dotnet run --project backend/OrderPilot.Api
 
 # Frontend: http://localhost:5173
@@ -57,90 +59,89 @@ npm install
 npm run dev
 ```
 
-Model `appsettings.json` içindeki `Gemini:Model` ayarından okunur. Anahtar hiçbir dosyaya yazılmaz.
+The model id is read from `Gemini:Model` in `appsettings.json`. The key is never written to any file in the repo.
 
-## AG-UI olayları
+## AG-UI events
 
-| Olay | Anlamı | Arayüzde |
+| Event | Meaning | In the UI |
 |---|---|---|
-| `RUN_STARTED` | Çalıştırma başladı | "Asistan yazıyor…" |
-| `TOOL_CALL_START` | Model bir tool seçti (`toolCallName`) | Tool adına göre kart, "çalışıyor" durumu |
-| `TOOL_CALL_ARGS` | Tool argümanları, parça parça | Argümanlar birikir |
-| `TOOL_CALL_END` | Argümanlar tamamlandı | |
-| `TOOL_CALL_RESULT` | Backend tool'u çalıştırdı, sonuç JSON | Sonuç kartı |
-| `TEXT_MESSAGE_START` / `CONTENT` / `END` | Modelin metin cevabı, akarak | Sohbet balonu |
-| `RUN_FINISHED` | Bitti. `outcome`: `success` veya `interrupt` | `interrupt` ise onay kartı |
-| `RUN_ERROR` | Çalıştırma hata ile bitti | Hata mesajı |
+| `RUN_STARTED` | A run has started | "Assistant is typing…" |
+| `TOOL_CALL_START` | The model picked a tool (`toolCallName`) | Card chosen by tool name, "running" state |
+| `TOOL_CALL_ARGS` | Tool arguments, streamed in chunks | Arguments accumulate |
+| `TOOL_CALL_END` | Arguments are complete | |
+| `TOOL_CALL_RESULT` | The backend ran the tool, result as JSON | Result card |
+| `TEXT_MESSAGE_START` / `CONTENT` / `END` | The model's text answer, streamed | Chat bubble |
+| `RUN_FINISHED` | Done. `outcome`: `success` or `interrupt` | `interrupt` shows the approval card |
+| `RUN_ERROR` | The run ended with an error | Error message |
 
-Sağdaki **AG-UI Olay Günlüğü**, frontend'in gönderdiği isteği (`→ POST /agent`) ve gelen her olayı (`←`) ham JSON olarak gösterir.
+The **AG-UI event log** on the right shows the request the frontend sent (`→ POST /agent`) and every incoming event (`←`) as raw JSON.
 
-## Örnek akış: bir iade, üç istek
+## Example flow: one refund, three requests
 
-Olay günlüğünden alınmış gerçek bir akış (`→` frontend'in isteği, `←` backend'in olayları):
+A real flow taken from the event log (`→` frontend request, `←` backend events):
 
 ```
-→ POST /agent  1 mesaj                  "12345 siparişini iade etmek istiyorum"
+→ POST /agent  1 message                "12345 siparişini iade etmek istiyorum" (I want a refund for order 12345)
 ← RUN_STARTED
-← TOOL_CALL_START   GetOrderStatus        Model önce siparişi doğrular
+← TOOL_CALL_START   GetOrderStatus        The model checks the order first
 ← TOOL_CALL_ARGS    {"orderId":"12345"}
 ← TOOL_CALL_END
-← TOOL_CALL_RESULT  {"orderId":"12345","status":"Delayed",...}   → sipariş kartı
-← TEXT_MESSAGE_START / END              "4 gün gecikmiş, iade başlatayım mı?"
+← TOOL_CALL_RESULT  {"orderId":"12345","status":"Delayed",...}   → order card
+← TEXT_MESSAGE_START / END              "4 days late, shall I start a refund?"
 ← RUN_FINISHED      success
 
-→ POST /agent  5 mesaj                  "Evet" (geçmişin tamamı gider)
+→ POST /agent  5 messages               "Evet" (Yes); the whole history is sent
 ← RUN_STARTED
 ← TOOL_CALL_START   StartRefund
 ← TOOL_CALL_ARGS    {"orderId":"12345","reason":"Gecikmiş sipariş"}
-← TOOL_CALL_END                         TOOL_CALL_RESULT yok: tool çalışmadı
-← RUN_FINISHED      interrupt           → onay kartı
+← TOOL_CALL_END                         No TOOL_CALL_RESULT: the tool did not run
+← RUN_FINISHED      interrupt           → approval card
 
-→ POST /agent  resume: onay             Kullanıcı "Onayla"ya bastı
+→ POST /agent  resume: approved         The user clicked "Onayla" (Approve)
 ← RUN_STARTED
-← TOOL_CALL_START   StartRefund          Gemini'ye sorulmadan, onaylanan çağrı çalışır
+← TOOL_CALL_START   StartRefund          The approved call runs without asking Gemini again
 ← TOOL_CALL_ARGS    {"orderId":"12345","reason":"Gecikmiş sipariş"}
 ← TOOL_CALL_END
-← TOOL_CALL_RESULT  {"status":"RefundInitiated","refundId":"REF-12345-...",...}   → iade kartı
-← TEXT_MESSAGE_START / END              "İade başlatıldı"
+← TOOL_CALL_RESULT  {"status":"RefundInitiated","refundId":"REF-12345-...",...}   → refund card
+← TEXT_MESSAGE_START / END              "Refund started"
 ← RUN_FINISHED      success
 ```
 
-Onay mekanizması: `StartRefund` backend'de `ApprovalRequiredAIFunction` ile sarılıdır. Backend onu çalıştırmak yerine
-çalıştırmayı `interrupt` ile bitirir. Kullanıcının kararı `resume: [{ interruptId, payload: { approved, toolCall } }]`
-ile geri gelir. Reddedilirse tool hiç çalışmaz ve model bunu kullanıcıya açıklar. İstek gövdesinin ayrıntısı için bkz.
-[frontend/README.md](frontend/README.md).
+How approval works: on the backend, `StartRefund` is wrapped in `ApprovalRequiredAIFunction`. Instead of running it,
+the backend ends the run with an `interrupt`. The user's decision comes back as
+`resume: [{ interruptId, payload: { approved, toolCall } }]`. If rejected, the tool never runs and the model explains
+that to the user. See [frontend/README.md](frontend/README.md) for the request body in detail.
 
-> **Güvenlik notu:** Bu demoda backend konuşmayı saklamaz; geçmişi ve onaylanan tool çağrısını frontend geri gönderir.
-> Bu yüzden `Program.cs` içinde `DisableApprovalResponseBinding = true` ayarlıdır. Gerçek bir uygulamada oturum
-> sunucuda tutulmalı (`AgentSessionStore`) ve bu bağlama açık kalmalıdır; böylece frontend onaylanan argümanları değiştiremez.
+> **Security note:** In this demo the backend does not store the conversation; the frontend sends back the history
+> and the approved tool call. That is why `Program.cs` sets `DisableApprovalResponseBinding = true`. A real app should
+> keep the session on the server (`AgentSessionStore`) and leave this binding on, so the frontend cannot change the
+> approved arguments.
 
 ## Demo
 
-Uygulama her başlatıldığında veriler sıfırlanır. `12345` numaralı sipariş 4 gün gecikmiştir (249.90 TRY).
-Başlangıçtan ~5 sn sonra üstte bildirim bandı çıkar.
+Data is reseeded on every start. Order `12345` is 4 days late (249.90 TRY).
+About 5 seconds after startup a notification banner appears at the top.
 
-**A. Kullanıcı başlatır**
-1. Banttaki **İncele**'ye basın ya da "12345 siparişini iade etmek istiyorum" yazın.
-2. Olay günlüğünde `GetOrderStatus` çağrısını ve sonuç kartını izleyin.
-3. Model iade önerir. Onay kartında **Onayla**'ya basın ve iade numarasını görün.
+**A. User-triggered**
+1. Click **İncele** (Inspect) on the banner, or type "12345 siparişini iade etmek istiyorum".
+2. Watch the `GetOrderStatus` call and its result card in the event log.
+3. The model suggests a refund. Click **Onayla** (Approve) on the approval card and see the refund id.
 
-**B. Backend başlatır**
-1. **Senaryoyu sıfırla**'ya basın ve hiçbir şey yapmayın.
-2. Banttaki geri sayım (`Demo:AutoRunSeconds`, varsayılan 180 sn) bitince backend SignalR ile `AutoRunRequested` gönderir.
-3. Frontend "Otomatik" rozetli bir mesajla AG-UI çalıştırmasını kendisi başlatır.
-4. Model iade önerse bile onay yine sizden istenir. Otomatik iade yapılmaz.
+**B. Backend-triggered**
+1. Click **Senaryoyu sıfırla** (Reset scenario) and do nothing.
+2. When the banner countdown ends (`Demo:AutoRunSeconds`, default 180 s), the backend sends `AutoRunRequested` over SignalR.
+3. The frontend starts an AG-UI run by itself with a message marked **Otomatik** (Automatic).
+4. Even if the model suggests a refund, approval is still required. There is no automatic refund.
 
-Mesaj göndermek veya **İncele**'ye basmak `UserActivity()` ile backend'e bildirilir ve otomatik çalıştırma o senaryo için iptal olur.
+Sending a message or clicking **İncele** reports `UserActivity()` to the backend, which cancels the auto-run for that scenario.
 
-## Önce hangi dosyayı okumalı?
+## What to read first
 
-1. [backend/OrderPilot.Api/Program.cs](backend/OrderPilot.Api/Program.cs): Gemini istemcisi, ajan, tool'lar, `/agent` uç noktası
-2. [backend/OrderPilot.Api/Tools/OrderTools.cs](backend/OrderPilot.Api/Tools/OrderTools.cs): tool olan C# metotları
-3. [frontend/src/hooks/useAgUiChat.ts](frontend/src/hooks/useAgUiChat.ts): AG-UI isteği, olaylar, onay/resume
-4. [frontend/src/components/ToolCards.tsx](frontend/src/components/ToolCards.tsx): tool adı → React bileşeni
-5. [backend/OrderPilot.Api/Services/DemoScenarioService.cs](backend/OrderPilot.Api/Services/DemoScenarioService.cs) ve [frontend/src/hooks/useNotificationHub.ts](frontend/src/hooks/useNotificationHub.ts): SignalR ve otomatik çalıştırma
+1. [backend/OrderPilot.Api/Program.cs](backend/OrderPilot.Api/Program.cs): Gemini client, agent, tools, `/agent` endpoint
+2. [backend/OrderPilot.Api/Tools/OrderTools.cs](backend/OrderPilot.Api/Tools/OrderTools.cs): the C# methods exposed as tools
+3. [frontend/src/hooks/useAgUiChat.ts](frontend/src/hooks/useAgUiChat.ts): AG-UI request, events, approval/resume
+4. [frontend/src/components/ToolCards.tsx](frontend/src/components/ToolCards.tsx): tool name → React component
+5. [backend/OrderPilot.Api/Services/DemoScenarioService.cs](backend/OrderPilot.Api/Services/DemoScenarioService.cs) and [frontend/src/hooks/useNotificationHub.ts](frontend/src/hooks/useNotificationHub.ts): SignalR and auto-run
 
-`Services/GeminiThoughtSignatureHandler.cs` Gemini'ye özgü bir ayrıntıdır: Gemini 3.x'in tool çağrılarına eklediği
-`thought_signature` değerini bir sonraki isteğe geri taşır. AG-UI'yi anlamak için okunması gerekmez.
-#   o r d e r p i l o t - a g u i - d o t n e t - r e a c t  
- 
+`Services/GeminiThoughtSignatureHandler.cs` is a Gemini-specific detail: it carries the `thought_signature` that
+Gemini 3.x attaches to tool calls over to the next request. You don't need it to understand AG-UI.

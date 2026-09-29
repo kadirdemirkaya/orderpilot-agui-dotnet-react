@@ -1,63 +1,64 @@
 # OrderPilot Frontend
 
-React + Vite + TypeScript. Backend ile iki kanaldan konuşur:
+React + Vite + TypeScript. Talks to the backend over two channels:
 
-| Kanal | Taşıma | Ne için |
+| Channel | Transport | Used for |
 |---|---|---|
-| AG-UI (`@ag-ui/client`) | HTTP `POST /agent` + SSE cevap | Sohbet, tool çağrıları, onay |
-| SignalR (`@microsoft/signalr`) | WebSocket `/hub/notifications` | Gecikme bildirimi, otomatik çalıştırma |
+| AG-UI (`@ag-ui/client`) | HTTP `POST /agent` + SSE response | Chat, tool calls, approval |
+| SignalR (`@microsoft/signalr`) | WebSocket `/hub/notifications` | Delay notification, auto-run |
 
-## AG-UI veri akışı
+## AG-UI data flow
 
-Her çalıştırmayı frontend başlatır. Backend aynı isteğin cevabı olarak olay akıtır.
-Tool'lar backend'de tanımlı. Frontend yalnızca **tool adına** bakıp hangi kartı çizeceğine karar verir.
+The frontend starts every run. The backend streams events back as the response to that same request.
+Tools are defined on the backend. The frontend only looks at the **tool name** to decide which card to render.
 
 ```
-FE ── POST /agent { messages } ───────────────▶ BE ──▶ Gemini (tool seçer)
-FE ◀─ RUN_STARTED                               BE tool'u çalıştırır
-FE ◀─ TOOL_CALL_START  { toolCallName }         → "çalışıyor" kartı
-FE ◀─ TOOL_CALL_ARGS   { delta }  (parça parça) → argümanlar birikir
+FE ── POST /agent { messages } ───────────────▶ BE ──▶ Gemini (picks a tool)
+FE ◀─ RUN_STARTED                               BE runs the tool
+FE ◀─ TOOL_CALL_START  { toolCallName }         → "running" card
+FE ◀─ TOOL_CALL_ARGS   { delta }  (chunked)     → arguments accumulate
 FE ◀─ TOOL_CALL_END
-FE ◀─ TOOL_CALL_RESULT { content }              → sonuç kartı (tool adına göre)
-FE ◀─ TEXT_MESSAGE_START / CONTENT / END        → asistan mesajı akarak yazılır
+FE ◀─ TOOL_CALL_RESULT { content }              → result card (by tool name)
+FE ◀─ TEXT_MESSAGE_START / CONTENT / END        → assistant message streams in
 FE ◀─ RUN_FINISHED { outcome: "success" }
 ```
 
-## Onay akışı (StartRefund)
+## Approval flow (StartRefund)
 
-`StartRefund` backend'de onay gerektiren tool olarak işaretli. Gemini onu seçtiğinde backend **çalıştırmaz**:
+`StartRefund` is marked on the backend as a tool that requires approval. When Gemini picks it, the backend
+**does not run it**:
 
 ```
-İstek 1
-FE ◀─ TOOL_CALL_START/ARGS/END  StartRefund {orderId, reason}   (RESULT yok: tool çalışmadı)
+Request 1
+FE ◀─ TOOL_CALL_START/ARGS/END  StartRefund {orderId, reason}   (no RESULT: the tool did not run)
 FE ◀─ RUN_FINISHED { outcome: { type: "interrupt",
                                 interrupts: [{ id, toolCallId }] } }
-      → onay kartı gösterilir
+      → approval card is shown
 
-İstek 2 (Onayla / Reddet)
+Request 2 (Approve / Reject)
 FE ── POST /agent { messages, resume: [{
         interruptId, status: "resolved",
         payload: { approved: true|false,
                    toolCall: { callId, name, arguments } } }] }
-FE ◀─ TOOL_CALL_RESULT          (yalnızca onaylandıysa: backend tool'u şimdi çalıştırır)
-FE ◀─ TEXT_MESSAGE_*            (Gemini sonucu özetler)
+FE ◀─ TOOL_CALL_RESULT          (only if approved: the backend runs the tool now)
+FE ◀─ TEXT_MESSAGE_*            (Gemini summarizes the result)
 FE ◀─ RUN_FINISHED
 ```
 
-Gemini'ye onaydan sonra tekrar "hangi tool?" diye sorulmaz. İlk istekte seçilen çağrı `resume.payload.toolCall`
-ile aynen geri gelir ve backend onu çalıştırır.
+Gemini is not asked "which tool?" again after approval. The call chosen in the first request comes back unchanged
+in `resume.payload.toolCall` and the backend runs it.
 
-> Not: Bu demoda backend konuşmayı saklamaz, geçmişi her istekte frontend gönderir.
-> Gerçek bir uygulamada bekleyen çağrı backend'de tutulur, frontend yalnızca `approved` gönderir.
+> Note: in this demo the backend does not store the conversation; the frontend sends the history on every request.
+> In a real app the pending call is kept on the backend and the frontend only sends `approved`.
 
-## Sözleşme
+## Contract
 
-Tool argüman ve sonuç alan adları elle yazılmış bir sözleşmedir. Backend `Models/Order.cs` ile
-`src/types.ts` birebir aynı olmalıdır.
+Tool argument and result field names are a hand-written contract. `Models/Order.cs` on the backend and
+`src/types.ts` must match exactly.
 
-## Çalıştırma
+## Running
 
 ```bash
 npm install
-npm run dev   # http://localhost:5173, backend http://localhost:5000
+npm run dev   # http://localhost:5173, backend at http://localhost:5000
 ```
